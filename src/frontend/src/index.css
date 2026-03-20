@@ -1,0 +1,84 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    /* Dark theme tokens (OKLCH L C H) */
+    --background: 0.13 0.015 240;
+    --foreground: 0.96 0.005 220;
+    --card: 0.2 0.025 240;
+    --card-foreground: 0.96 0.005 220;
+    --popover: 0.22 0.028 240;
+    --popover-foreground: 0.96 0.005 220;
+    --primary: 0.6 0.14 230;
+    --primary-foreground: 0.98 0 0;
+    --secondary: 0.24 0.03 240;
+    --secondary-foreground: 0.96 0.005 220;
+    --muted: 0.24 0.025 240;
+    --muted-foreground: 0.65 0.02 230;
+    --accent: 0.26 0.03 240;
+    --accent-foreground: 0.96 0.005 220;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.3 0.03 240;
+    --input: 0.26 0.025 240;
+    --ring: 0.6 0.14 230;
+    --online: 0.74 0.18 145;
+    --chart-1: 0.488 0.243 264.376;
+    --chart-2: 0.696 0.17 162.48;
+    --chart-3: 0.769 0.188 70.08;
+    --chart-4: 0.627 0.265 303.9;
+    --chart-5: 0.645 0.246 16.439;
+    --sidebar: 0.18 0.022 240;
+    --sidebar-foreground: 0.96 0.005 220;
+    --sidebar-primary: 0.6 0.14 230;
+    --sidebar-primary-foreground: 0.98 0 0;
+    --sidebar-accent: 0.24 0.03 240;
+    --sidebar-accent-foreground: 0.96 0.005 220;
+    --sidebar-border: 0.3 0.03 240;
+    --sidebar-ring: 0.6 0.14 230;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
