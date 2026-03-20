@@ -85,7 +85,9 @@ export const idlService = IDL.Service({
       [IDL.Text, IDL.Vec(UserId)],
       ['query'],
     ),
+  'getUserProfile' : IDL.Func([UserId], [UserProfile], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'markMessagesRead' : IDL.Func([ConversationId], [IDL.Opt(MessageId)], []),
   'registerOrUpdateProfile' : IDL.Func([IDL.Text], [], []),
   'sendMessage' : IDL.Func(
       [ConversationId, IDL.Text, IDL.Opt(FileAttachment)],
@@ -176,7 +178,9 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Text, IDL.Vec(UserId)],
         ['query'],
       ),
+    'getUserProfile' : IDL.Func([UserId], [UserProfile], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'markMessagesRead' : IDL.Func([ConversationId], [IDL.Opt(MessageId)], []),
     'registerOrUpdateProfile' : IDL.Func([IDL.Text], [], []),
     'sendMessage' : IDL.Func(
         [ConversationId, IDL.Text, IDL.Opt(FileAttachment)],

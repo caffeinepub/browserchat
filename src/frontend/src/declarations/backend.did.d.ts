@@ -69,7 +69,9 @@ export interface _SERVICE {
     [ConversationId],
     [string, Array<UserId>]
   >,
+  'getUserProfile' : ActorMethod<[UserId], UserProfile>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'markMessagesRead' : ActorMethod<[ConversationId], [] | [MessageId]>,
   'registerOrUpdateProfile' : ActorMethod<[string], undefined>,
   'sendMessage' : ActorMethod<
     [ConversationId, string, [] | [FileAttachment]],

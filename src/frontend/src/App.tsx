@@ -14,7 +14,8 @@ export default function App() {
   const { identity, isInitializing } = useInternetIdentity();
   const isAuthenticated = !!identity;
 
-  const { isFetching: actorFetching, isError: actorError } = useActor();
+  const { isFetching: actorFetching } = useActor();
+  const actorError = false;
 
   const {
     data: profile,

@@ -1,13 +1,24 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Paperclip, Send, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  CheckCheck,
+  FileText,
+  Paperclip,
+  Send,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { ConversationId, UserProfile } from "../backend";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
+  useGetConversationReadStatus,
   useGetMessages,
   useGetTypingParticipants,
+  useGetUserProfile,
+  useMarkMessagesRead,
   useSendMessage,
   useSetTyping,
 } from "../hooks/useQueries";
@@ -16,6 +27,7 @@ import { formatLastSeen, formatMessageTime, getInitials } from "../utils/time";
 interface ConversationViewProps {
   convoId: ConversationId;
   otherUser: UserProfile;
+  otherUserPrincipal: string;
   onBack: () => void;
   notifyNewMessage: () => void;
 }
@@ -23,6 +35,7 @@ interface ConversationViewProps {
 export default function ConversationView({
   convoId,
   otherUser,
+  otherUserPrincipal,
   onBack,
   notifyNewMessage,
 }: ConversationViewProps) {
@@ -33,6 +46,20 @@ export default function ConversationView({
   const { data: typingData } = useGetTypingParticipants(convoId);
   const { mutate: sendMessage, isPending: isSending } = useSendMessage();
   const { mutate: setTyping } = useSetTyping();
+  const { mutate: markRead } = useMarkMessagesRead();
+  const { data: readStatusData } = useGetConversationReadStatus(convoId);
+  const { data: liveProfile } = useGetUserProfile(otherUserPrincipal);
+
+  // Merge live profile with prop fallback
+  const profile: UserProfile = liveProfile ?? otherUser;
+
+  // Build read status map: principalStr -> lastReadMessageId
+  const readStatusMap = new Map<string, bigint>();
+  if (readStatusData) {
+    for (const [p, id] of readStatusData) {
+      readStatusMap.set(p, id);
+    }
+  }
 
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState<{
@@ -54,12 +81,19 @@ export default function ConversationView({
     }
   }, [messages.length]);
 
+  // Mark messages as read whenever new messages arrive
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mark read on new messages
+  useEffect(() => {
+    if (messages.length > 0) {
+      markRead(convoId);
+    }
+  }, [messages.length, convoId]);
+
   // Detect new incoming messages and notify
   useEffect(() => {
     const prev = prevMessageCountRef.current;
     const current = messages.length;
     if (current > prev) {
-      // Check if any new messages are from the other user
       const newMessages = messages.slice(prev);
       const hasIncoming = newMessages.some(
         (msg) => msg.sender.toString() !== myPrincipal,
@@ -134,6 +168,8 @@ export default function ConversationView({
   const isImageFile = (name: string) =>
     /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name);
 
+  const otherReadUpTo = readStatusMap.get(otherUserPrincipal) ?? -1n;
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -156,13 +192,13 @@ export default function ConversationView({
                 color: "oklch(var(--foreground))",
               }}
             >
-              {getInitials(otherUser.displayName)}
+              {getInitials(profile.displayName)}
             </AvatarFallback>
           </Avatar>
           <span
             className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card"
             style={{
-              background: otherUser.online
+              background: profile.online
                 ? "oklch(var(--online))"
                 : "oklch(0.45 0 0)",
             }}
@@ -170,14 +206,14 @@ export default function ConversationView({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground">
-            {otherUser.displayName}
+            {profile.displayName}
           </p>
           <p className="text-xs">
-            {otherUser.online ? (
+            {profile.online ? (
               <span style={{ color: "oklch(var(--online))" }}>Online</span>
             ) : (
               <span className="text-muted-foreground">
-                {formatLastSeen(otherUser.lastSeen)}
+                {formatLastSeen(profile.lastSeen)}
               </span>
             )}
           </p>
@@ -201,6 +237,7 @@ export default function ConversationView({
         ) : (
           messages.map((msg) => {
             const isMine = msg.sender.toString() === myPrincipal;
+            const isSeen = isMine && otherReadUpTo >= msg.id;
             return (
               <div
                 key={String(msg.id)}
@@ -242,9 +279,23 @@ export default function ConversationView({
                       )}
                     </div>
                   )}
-                  <p className="text-xs opacity-60 mt-1 text-right">
-                    {formatMessageTime(msg.timestamp)}
-                  </p>
+                  <div className="flex items-center justify-end gap-1 mt-1">
+                    <p className="text-xs opacity-60">
+                      {formatMessageTime(msg.timestamp)}
+                    </p>
+                    {isMine &&
+                      (isSeen ? (
+                        <CheckCheck
+                          size={12}
+                          style={{ color: "oklch(0.80 0.14 200)" }}
+                        />
+                      ) : (
+                        <Check
+                          size={12}
+                          className="text-muted-foreground opacity-60"
+                        />
+                      ))}
+                  </div>
                 </div>
               </div>
             );
@@ -264,7 +315,7 @@ export default function ConversationView({
                 style={{ background: "oklch(var(--secondary))" }}
               >
                 <span className="text-xs text-muted-foreground mr-1">
-                  {otherUser.displayName} is typing
+                  {profile.displayName} is typing
                 </span>
                 <span className="typing-dot w-1.5 h-1.5 rounded-full bg-muted-foreground inline-block" />
                 <span className="typing-dot w-1.5 h-1.5 rounded-full bg-muted-foreground inline-block" />

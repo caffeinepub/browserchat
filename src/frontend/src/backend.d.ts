@@ -44,10 +44,13 @@ export interface backendInterface {
     getAllUsers(): Promise<Array<UserProfile>>;
     getCallerProfile(): Promise<UserProfile>;
     getCallerUserRole(): Promise<UserRole>;
+    getConversationReadStatus(convoId: ConversationId): Promise<Array<[string, bigint]>>;
     getMessages(convoId: ConversationId): Promise<Array<Message>>;
     getOrCreateConversation(participant: UserId): Promise<ConversationId>;
     getTypingParticipants(convoId: ConversationId): Promise<[string, Array<UserId>]>;
+    getUserProfile(userId: UserId): Promise<UserProfile>;
     isCallerAdmin(): Promise<boolean>;
+    markMessagesRead(convoId: ConversationId): Promise<MessageId | null>;
     registerOrUpdateProfile(displayName: string): Promise<void>;
     sendMessage(convoId: ConversationId, content: string, fileAttachment: FileAttachment | null): Promise<MessageId>;
     setTyping(convoId: ConversationId, isTyping: boolean): Promise<void>;

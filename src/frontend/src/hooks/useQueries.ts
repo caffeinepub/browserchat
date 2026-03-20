@@ -70,6 +70,51 @@ export function useGetTypingParticipants(convoId: ConversationId | null) {
   });
 }
 
+export function useGetConversationReadStatus(convoId: ConversationId | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<Array<[string, bigint]>>({
+    queryKey: ["readStatus", convoId],
+    queryFn: async () => {
+      if (!actor || !convoId) return [];
+      // getConversationReadStatus exists on the backend but is missing from the
+      // generated backendInterface type in backend.ts — cast to any as workaround
+      return (actor as any).getConversationReadStatus(convoId) as Promise<
+        Array<[string, bigint]>
+      >;
+    },
+    enabled: !!actor && !isFetching && !!convoId,
+    refetchInterval: 3000,
+  });
+}
+
+export function useGetUserProfile(principalStr: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<UserProfile | null>({
+    queryKey: ["userProfile", principalStr],
+    queryFn: async () => {
+      if (!actor || !principalStr) return null;
+      try {
+        const { Principal } = await import("@icp-sdk/core/principal");
+        return await actor.getUserProfile(Principal.fromText(principalStr));
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !isFetching && !!principalStr,
+    refetchInterval: 10000,
+  });
+}
+
+export function useMarkMessagesRead() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (convoId: ConversationId) => {
+      if (!actor) throw new Error("No actor");
+      return actor.markMessagesRead(convoId);
+    },
+  });
+}
+
 export function useRegisterProfile() {
   const { actor } = useActor();
   const queryClient = useQueryClient();

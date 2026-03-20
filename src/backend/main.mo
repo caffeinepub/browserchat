@@ -5,6 +5,7 @@ import Time "mo:core/Time";
 import Text "mo:core/Text";
 import Order "mo:core/Order";
 import List "mo:core/List";
+import Migration "migration";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
 import MixinAuthorization "authorization/MixinAuthorization";
@@ -12,6 +13,7 @@ import AccessControl "authorization/access-control";
 import MixinStorage "blob-storage/Mixin";
 import Storage "blob-storage/Storage";
 
+(with migration = Migration.run)
 actor {
   include MixinStorage();
 
@@ -43,19 +45,13 @@ actor {
     participants : [UserId];
     messages : [Message];
     typingStates : Map.Map<UserId, Bool>;
+    readUpTo : Map.Map<UserId, MessageId>;
   };
 
   type UserProfile = {
     displayName : Text;
     lastSeen : Timestamp;
     online : Bool;
-  };
-
-  type MessagingAppState = {
-    conversations : Map.Map<Text, Conversation>;
-    typingStatus : Map.Map<Text, Map.Map<UserId, Bool>>;
-    userProfiles : Map.Map<UserId, UserProfile>;
-    nextMessageId : Nat;
   };
 
   module UserProfile {
@@ -144,6 +140,7 @@ actor {
         participants = [caller, participant];
         messages = [];
         typingStates = Map.empty<UserId, Bool>();
+        readUpTo = Map.empty<UserId, MessageId>();
       };
       conversations.add(id, newConvo);
     };
@@ -203,6 +200,71 @@ actor {
     };
 
     convo.messages;
+  };
+
+  // Returns readUpTo entries for a conversation as [(principalText, messageId)]
+  public query ({ caller }) func getConversationReadStatus(convoId : ConversationId) : async [(Text, Nat)] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+    let convo = getConversationInternal(convoId);
+    if (not convo.participants.find(func(user) { user == caller }).isSome()) {
+      Runtime.trap("Only participants can view read status");
+    };
+    let result = List.empty<(Text, Nat)>();
+    for ((uid, msgId) in convo.readUpTo.entries()) {
+      result.add((uid.toText(), msgId));
+    };
+    result.toArray();
+  };
+
+  func getLastMessageId(convo : Conversation) : ?MessageId {
+    if (convo.messages.size() == 0) { null } else { ?(convo.messages.size() - 1) };
+  };
+
+  public query ({ caller }) func getUserProfile(userId : UserId) : async UserProfile {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only registered users can fetch profiles");
+    };
+    getUserProfileInternal(userId);
+  };
+
+  public shared ({ caller }) func markMessagesRead(convoId : ConversationId) : async ?MessageId {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only participants can mark messages as read");
+    };
+
+    let conversation = getConversationInternal(convoId);
+
+    let lastMessageId = getLastMessageId(conversation);
+    switch (lastMessageId) {
+      case (null) { return null };
+      case (?id) {
+        if (not conversation.participants.find(func(user) { user == caller }).isSome()) {
+          Runtime.trap("Caller is not a participant in this conversation");
+        };
+
+        let updatedReadUpTo = switch (conversation.readUpTo.get(caller)) {
+          case (?currentId) {
+            if (id > currentId) {
+              conversation.readUpTo.add(caller, id);
+              conversation.readUpTo;
+            } else {
+              conversation.readUpTo;
+            };
+          };
+          case (null) {
+            let newMap = conversation.readUpTo;
+            newMap.add(caller, id);
+            newMap;
+          };
+        };
+
+        let updatedConversation = { conversation with readUpTo = updatedReadUpTo };
+        conversations.add(convoId, updatedConversation);
+        ?id;
+      };
+    };
   };
 
   // Typing Status
