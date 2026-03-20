@@ -26,12 +26,14 @@ interface MessagingSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   currentUserName: string;
+  notifyNewMessage: () => void;
 }
 
 export default function MessagingSidebar({
   isOpen,
   onClose,
   currentUserName,
+  notifyNewMessage,
 }: MessagingSidebarProps) {
   const { identity } = useInternetIdentity();
   const { data: users = [] } = useGetAllUsers();
@@ -127,6 +129,7 @@ export default function MessagingSidebar({
                 convoId={convoId}
                 otherUser={selectedUser}
                 onBack={handleBack}
+                notifyNewMessage={notifyNewMessage}
               />
             ) : (
               <div className="flex flex-col h-full">

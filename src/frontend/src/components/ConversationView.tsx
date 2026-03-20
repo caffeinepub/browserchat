@@ -17,12 +17,14 @@ interface ConversationViewProps {
   convoId: ConversationId;
   otherUser: UserProfile;
   onBack: () => void;
+  notifyNewMessage: () => void;
 }
 
 export default function ConversationView({
   convoId,
   otherUser,
   onBack,
+  notifyNewMessage,
 }: ConversationViewProps) {
   const { identity } = useInternetIdentity();
   const myPrincipal = identity?.getPrincipal().toString();
@@ -42,6 +44,7 @@ export default function ConversationView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
+  const prevMessageCountRef = useRef(messages.length);
 
   // Scroll to bottom when messages arrive
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll-on-count-change
@@ -50,6 +53,23 @@ export default function ConversationView({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages.length]);
+
+  // Detect new incoming messages and notify
+  useEffect(() => {
+    const prev = prevMessageCountRef.current;
+    const current = messages.length;
+    if (current > prev) {
+      // Check if any new messages are from the other user
+      const newMessages = messages.slice(prev);
+      const hasIncoming = newMessages.some(
+        (msg) => msg.sender.toString() !== myPrincipal,
+      );
+      if (hasIncoming) {
+        notifyNewMessage();
+      }
+    }
+    prevMessageCountRef.current = current;
+  }, [messages, myPrincipal, notifyNewMessage]);
 
   const otherIsTyping = typingData?.[1].some(
     (p) => p.toString() !== myPrincipal,

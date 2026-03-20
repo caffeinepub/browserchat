@@ -11,6 +11,7 @@ import {
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { useNotifications } from "../hooks/useNotifications";
 import { useUpdateLastSeen } from "../hooks/useQueries";
 import MessagingSidebar from "./MessagingSidebar";
 
@@ -25,15 +26,27 @@ export default function BrowserApp({ currentUserName }: BrowserAppProps) {
   const [inputUrl, setInputUrl] = useState(DEFAULT_URL);
   const [iframeKey, setIframeKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const { clear } = useInternetIdentity();
   const queryClient = useQueryClient();
   const { mutate: updateLastSeen } = useUpdateLastSeen();
+  const { notifyNewMessage } = useNotifications();
 
   useEffect(() => {
-    updateLastSeen();
-    const interval = setInterval(() => updateLastSeen(), 30_000);
+    try {
+      updateLastSeen();
+    } catch {
+      /* ignore */
+    }
+    const interval = setInterval(() => {
+      try {
+        updateLastSeen();
+      } catch {
+        /* ignore */
+      }
+    }, 30_000);
     return () => clearInterval(interval);
   }, [updateLastSeen]);
 
@@ -48,6 +61,7 @@ export default function BrowserApp({ currentUserName }: BrowserAppProps) {
     }
     setUrl(finalUrl);
     setInputUrl(finalUrl);
+    setIframeError(false);
     setIframeKey((k) => k + 1);
   };
 
@@ -57,30 +71,41 @@ export default function BrowserApp({ currentUserName }: BrowserAppProps) {
   };
 
   const handleBack = () => {
-    iframeRef.current?.contentWindow?.history.back();
+    try {
+      iframeRef.current?.contentWindow?.history.back();
+    } catch {
+      /* cross-origin */
+    }
   };
 
   const handleForward = () => {
-    iframeRef.current?.contentWindow?.history.forward();
+    try {
+      iframeRef.current?.contentWindow?.history.forward();
+    } catch {
+      /* cross-origin */
+    }
   };
 
   const handleRefresh = () => {
+    setIframeError(false);
     setIframeKey((k) => k + 1);
   };
 
   const handleLogout = async () => {
-    await clear();
-    queryClient.clear();
+    try {
+      await clear();
+      queryClient.clear();
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
-      {/* Browser toolbar */}
       <div
         className="flex items-center gap-2 px-3 py-2 border-b border-border flex-shrink-0"
         style={{ background: "oklch(var(--card))" }}
       >
-        {/* macOS-style window dots */}
         <div className="flex items-center gap-1.5 mr-2">
           <div
             className="w-3 h-3 rounded-full"
@@ -176,22 +201,37 @@ export default function BrowserApp({ currentUserName }: BrowserAppProps) {
         </Button>
       </div>
 
-      {/* iFrame area */}
       <div className="flex-1 relative overflow-hidden">
-        <iframe
-          key={iframeKey}
-          ref={iframeRef}
-          src={url}
-          className="w-full h-full border-none"
-          title="Browser"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
-        />
+        {iframeError ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
+            <p className="text-sm">This page could not be loaded.</p>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: "oklch(0.60 0.14 230)", color: "white" }}
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <iframe
+            key={iframeKey}
+            ref={iframeRef}
+            src={url}
+            className="w-full h-full border-none"
+            title="Browser"
+            onError={() => setIframeError(true)}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
+          />
+        )}
       </div>
 
       <MessagingSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         currentUserName={currentUserName}
+        notifyNewMessage={notifyNewMessage}
       />
     </div>
   );

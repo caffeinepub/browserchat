@@ -12,7 +12,12 @@ interface ProfileSetupProps {
 
 export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
   const [displayName, setDisplayName] = useState("");
-  const { mutate, isPending, isError } = useRegisterProfile();
+  const { mutate, isPending, isError, reset } = useRegisterProfile();
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDisplayName(e.target.value);
+    if (isError) reset();
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +70,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
                 data-ocid="profile.input"
                 id="displayName"
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                onChange={handleChange}
                 placeholder="e.g. Alex Johnson"
                 className="h-11 bg-input border-border text-foreground placeholder:text-muted-foreground"
                 autoFocus
