@@ -6,12 +6,13 @@ import {
   CheckCheck,
   FileText,
   Paperclip,
+  Reply,
   Send,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import type { ConversationId, UserProfile } from "../backend";
+import type { ConversationId, Message, UserProfile } from "../backend";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useGetConversationReadStatus,
@@ -21,15 +22,27 @@ import {
   useMarkMessagesRead,
   useSendMessage,
   useSetTyping,
+  useUpdateLastSeen,
 } from "../hooks/useQueries";
-import { formatLastSeen, formatMessageTime, getInitials } from "../utils/time";
+import {
+  formatLastSeen,
+  formatMessageTime,
+  getInitials,
+  isOnlineFromLastSeen,
+} from "../utils/time";
 
 interface ConversationViewProps {
   convoId: ConversationId;
   otherUser: UserProfile;
   otherUserPrincipal: string;
   onBack: () => void;
-  notifyNewMessage: () => void;
+  notifyNewMessage: (isChatActive: boolean) => void;
+}
+
+interface SwipeState {
+  startX: number;
+  startY: number;
+  msgId: bigint;
 }
 
 export default function ConversationView({
@@ -49,11 +62,19 @@ export default function ConversationView({
   const { mutate: markRead } = useMarkMessagesRead();
   const { data: readStatusData } = useGetConversationReadStatus(convoId);
   const { data: liveProfile } = useGetUserProfile(otherUserPrincipal);
+  const { mutate: updateLastSeen } = useUpdateLastSeen();
 
-  // Merge live profile with prop fallback
   const profile: UserProfile = liveProfile ?? otherUser;
+  // Derive online status from lastSeen timestamp (backend field may be stale)
+  const isOnline = isOnlineFromLastSeen(profile.lastSeen);
 
-  // Build read status map: principalStr -> lastReadMessageId
+  // Keep current user's lastSeen updated while they're in this conversation
+  useEffect(() => {
+    updateLastSeen();
+    const interval = setInterval(() => updateLastSeen(), 30_000);
+    return () => clearInterval(interval);
+  }, [updateLastSeen]);
+
   const readStatusMap = new Map<string, bigint>();
   if (readStatusData) {
     for (const [p, id] of readStatusData) {
@@ -67,13 +88,16 @@ export default function ConversationView({
     name: string;
     preview?: string;
   } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
   const prevMessageCountRef = useRef(messages.length);
+  const swipeRef = useRef<SwipeState | null>(null);
 
-  // Scroll to bottom when messages arrive
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll-on-count-change
   useEffect(() => {
     if (scrollRef.current) {
@@ -81,7 +105,6 @@ export default function ConversationView({
     }
   }, [messages.length]);
 
-  // Mark messages as read whenever new messages arrive
   // biome-ignore lint/correctness/useExhaustiveDependencies: mark read on new messages
   useEffect(() => {
     if (messages.length > 0) {
@@ -89,7 +112,6 @@ export default function ConversationView({
     }
   }, [messages.length, convoId]);
 
-  // Detect new incoming messages and notify
   useEffect(() => {
     const prev = prevMessageCountRef.current;
     const current = messages.length;
@@ -99,7 +121,8 @@ export default function ConversationView({
         (msg) => msg.sender.toString() !== myPrincipal,
       );
       if (hasIncoming) {
-        notifyNewMessage();
+        // Pass true = user is actively on the chat screen, suppress notification
+        notifyNewMessage(true);
       }
     }
     prevMessageCountRef.current = current;
@@ -128,14 +151,23 @@ export default function ConversationView({
     isTypingRef.current = false;
     setTyping({ convoId, isTyping: false });
     sendMessage(
-      { convoId, content: text.trim(), file: pendingFile ?? undefined },
+      {
+        convoId,
+        content: text.trim(),
+        file: pendingFile ?? undefined,
+        replyToId: replyingTo?.id ?? undefined,
+      },
       {
         onSuccess: () => {
           setText("");
           setPendingFile(null);
+          setReplyingTo(null);
         },
       },
     );
+    // Clear input immediately for snappy feel
+    setText("");
+    setReplyingTo(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -165,10 +197,71 @@ export default function ConversationView({
     };
   }, [pendingFile?.preview]);
 
+  // Swipe gesture handlers
+  const handleTouchStart = (e: React.TouchEvent, msg: Message) => {
+    swipeRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      msgId: msg.id,
+    };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, msg: Message) => {
+    if (!swipeRef.current || swipeRef.current.msgId !== msg.id) return;
+    const deltaX = e.touches[0].clientX - swipeRef.current.startX;
+    const deltaY = Math.abs(e.touches[0].clientY - swipeRef.current.startY);
+    if (deltaX > 0 && deltaX > deltaY) {
+      const offset = Math.min(deltaX, 80);
+      setSwipeOffsets((prev) => ({ ...prev, [String(msg.id)]: offset }));
+    }
+  };
+
+  const handleTouchEnd = (msg: Message) => {
+    const offset = swipeOffsets[String(msg.id)] ?? 0;
+    if (offset > 50) {
+      setReplyingTo(msg);
+    }
+    setSwipeOffsets((prev) => ({ ...prev, [String(msg.id)]: 0 }));
+    swipeRef.current = null;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent, msg: Message) => {
+    swipeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      msgId: msg.id,
+    };
+  };
+
+  const handleMouseUp = (e: React.MouseEvent, msg: Message) => {
+    if (!swipeRef.current || swipeRef.current.msgId !== msg.id) return;
+    const deltaX = e.clientX - swipeRef.current.startX;
+    if (deltaX > 50) {
+      setReplyingTo(msg);
+    }
+    setSwipeOffsets((prev) => ({ ...prev, [String(msg.id)]: 0 }));
+    swipeRef.current = null;
+  };
+
   const isImageFile = (name: string) =>
     /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name);
 
   const otherReadUpTo = readStatusMap.get(otherUserPrincipal) ?? -1n;
+
+  const getQuotedMessage = (replyToId: bigint): Message | undefined =>
+    messages.find((m) => m.id === replyToId);
+
+  const getQuotedSenderName = (senderId: string) =>
+    senderId === myPrincipal ? "You" : profile.displayName;
+
+  const getQuotedPreview = (msg: Message): string => {
+    if (msg.content)
+      return (
+        msg.content.slice(0, 60) + (msg.content.length > 60 ? "\u2026" : "")
+      );
+    if (msg.file) return `\uD83D\uDCCE ${msg.file.name}`;
+    return "\uD83D\uDCCE File";
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -198,9 +291,7 @@ export default function ConversationView({
           <span
             className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card"
             style={{
-              background: profile.online
-                ? "oklch(var(--online))"
-                : "oklch(0.45 0 0)",
+              background: isOnline ? "oklch(var(--online))" : "oklch(0.45 0 0)",
             }}
           />
         </div>
@@ -209,11 +300,13 @@ export default function ConversationView({
             {profile.displayName}
           </p>
           <p className="text-xs">
-            {profile.online ? (
+            {isOnline ? (
               <span style={{ color: "oklch(var(--online))" }}>Online</span>
             ) : (
               <span className="text-muted-foreground">
-                {formatLastSeen(profile.lastSeen)}
+                {profile.lastSeen > 0n
+                  ? formatLastSeen(profile.lastSeen)
+                  : "Offline"}
               </span>
             )}
           </p>
@@ -223,7 +316,7 @@ export default function ConversationView({
       {/* Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-2"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-2 overflow-x-hidden"
       >
         {messages.length === 0 ? (
           <div
@@ -238,22 +331,71 @@ export default function ConversationView({
           messages.map((msg) => {
             const isMine = msg.sender.toString() === myPrincipal;
             const isSeen = isMine && otherReadUpTo >= msg.id;
+            const swipeOffset = swipeOffsets[String(msg.id)] ?? 0;
+            const quotedMsg = msg.replyToId
+              ? getQuotedMessage(msg.replyToId)
+              : undefined;
+
             return (
               <div
                 key={String(msg.id)}
-                className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                className={`flex ${isMine ? "justify-end" : "justify-start"} relative`}
               >
+                {/* Reply icon shown on swipe */}
+                {swipeOffset > 10 && (
+                  <div
+                    className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 rounded-full"
+                    style={{
+                      opacity: Math.min(swipeOffset / 50, 1),
+                      background: "oklch(0.35 0.06 230)",
+                    }}
+                  >
+                    <Reply className="w-4 h-4 text-white" />
+                  </div>
+                )}
                 <div
                   className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
                     isMine ? "rounded-br-sm" : "rounded-bl-sm"
-                  }`}
+                  } select-none`}
                   style={{
                     background: isMine
                       ? "oklch(0.60 0.14 230)"
                       : "oklch(var(--secondary))",
                     color: "oklch(var(--foreground))",
+                    transform: `translateX(${swipeOffset}px)`,
+                    transition:
+                      swipeOffset === 0 ? "transform 0.2s ease" : "none",
+                    touchAction: "pan-y",
                   }}
+                  onTouchStart={(e) => handleTouchStart(e, msg)}
+                  onTouchMove={(e) => handleTouchMove(e, msg)}
+                  onTouchEnd={() => handleTouchEnd(msg)}
+                  onMouseDown={(e) => handleMouseDown(e, msg)}
+                  onMouseUp={(e) => handleMouseUp(e, msg)}
                 >
+                  {/* Quoted block */}
+                  {quotedMsg && (
+                    <div
+                      className="mb-2 rounded-lg px-3 py-1.5 text-xs border-l-2"
+                      style={{
+                        background: isMine
+                          ? "oklch(0.50 0.12 230)"
+                          : "oklch(0.28 0.02 230)",
+                        borderLeftColor: "oklch(0.75 0.14 200)",
+                      }}
+                    >
+                      <p
+                        className="font-semibold mb-0.5"
+                        style={{ color: "oklch(0.80 0.14 200)" }}
+                      >
+                        {getQuotedSenderName(quotedMsg.sender.toString())}
+                      </p>
+                      <p className="opacity-80 truncate">
+                        {getQuotedPreview(quotedMsg)}
+                      </p>
+                    </div>
+                  )}
+
                   {msg.content && (
                     <p className="text-sm leading-relaxed break-words">
                       {msg.content}
@@ -326,6 +468,50 @@ export default function ConversationView({
         </AnimatePresence>
       </div>
 
+      {/* Reply preview bar */}
+      <AnimatePresence>
+        {replyingTo && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="px-4 pb-1"
+          >
+            <div
+              className="flex items-center gap-2 rounded-xl px-3 py-2 border-l-2"
+              style={{
+                background: "oklch(0.22 0.03 230)",
+                borderLeftColor: "oklch(0.60 0.14 230)",
+              }}
+            >
+              <Reply
+                className="w-4 h-4 flex-shrink-0"
+                style={{ color: "oklch(0.60 0.14 230)" }}
+              />
+              <div className="flex-1 min-w-0">
+                <p
+                  className="text-xs font-semibold"
+                  style={{ color: "oklch(0.80 0.14 200)" }}
+                >
+                  {getQuotedSenderName(replyingTo.sender.toString())}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {getQuotedPreview(replyingTo)}
+                </p>
+              </div>
+              <button
+                type="button"
+                data-ocid="chat.cancel_button"
+                onClick={() => setReplyingTo(null)}
+                className="text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* File preview */}
       {pendingFile && (
         <div className="px-4 pb-2">
@@ -378,7 +564,7 @@ export default function ConversationView({
             value={text}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message…"
+            placeholder="Type a message\u2026"
             className="flex-1 h-10 bg-input border border-border rounded-xl px-4 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/60 transition-colors"
           />
           <Button

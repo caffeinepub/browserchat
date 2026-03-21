@@ -44,6 +44,7 @@ export const Message = IDL.Record({
   'file' : IDL.Opt(FileAttachment),
   'sender' : UserId,
   'timestamp' : Timestamp,
+  'replyToId' : IDL.Opt(MessageId),
 });
 
 export const idlService = IDL.Service({
@@ -78,6 +79,11 @@ export const idlService = IDL.Service({
   'getAllUsers' : IDL.Func([], [IDL.Vec(UserProfile)], ['query']),
   'getCallerProfile' : IDL.Func([], [UserProfile], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getConversationReadStatus' : IDL.Func(
+      [ConversationId],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat))],
+      ['query'],
+    ),
   'getMessages' : IDL.Func([ConversationId], [IDL.Vec(Message)], ['query']),
   'getOrCreateConversation' : IDL.Func([UserId], [ConversationId], []),
   'getTypingParticipants' : IDL.Func(
@@ -90,7 +96,7 @@ export const idlService = IDL.Service({
   'markMessagesRead' : IDL.Func([ConversationId], [IDL.Opt(MessageId)], []),
   'registerOrUpdateProfile' : IDL.Func([IDL.Text], [], []),
   'sendMessage' : IDL.Func(
-      [ConversationId, IDL.Text, IDL.Opt(FileAttachment)],
+      [ConversationId, IDL.Text, IDL.Opt(FileAttachment), IDL.Opt(MessageId)],
       [MessageId],
       [],
     ),
@@ -137,6 +143,7 @@ export const idlFactory = ({ IDL }) => {
     'file' : IDL.Opt(FileAttachment),
     'sender' : UserId,
     'timestamp' : Timestamp,
+    'replyToId' : IDL.Opt(MessageId),
   });
   
   return IDL.Service({
@@ -171,6 +178,11 @@ export const idlFactory = ({ IDL }) => {
     'getAllUsers' : IDL.Func([], [IDL.Vec(UserProfile)], ['query']),
     'getCallerProfile' : IDL.Func([], [UserProfile], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getConversationReadStatus' : IDL.Func(
+        [ConversationId],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat))],
+        ['query'],
+      ),
     'getMessages' : IDL.Func([ConversationId], [IDL.Vec(Message)], ['query']),
     'getOrCreateConversation' : IDL.Func([UserId], [ConversationId], []),
     'getTypingParticipants' : IDL.Func(
@@ -183,7 +195,7 @@ export const idlFactory = ({ IDL }) => {
     'markMessagesRead' : IDL.Func([ConversationId], [IDL.Opt(MessageId)], []),
     'registerOrUpdateProfile' : IDL.Func([IDL.Text], [], []),
     'sendMessage' : IDL.Func(
-        [ConversationId, IDL.Text, IDL.Opt(FileAttachment)],
+        [ConversationId, IDL.Text, IDL.Opt(FileAttachment), IDL.Opt(MessageId)],
         [MessageId],
         [],
       ),

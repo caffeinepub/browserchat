@@ -106,6 +106,7 @@ export interface Message {
     file?: FileAttachment;
     sender: UserId;
     timestamp: Timestamp;
+    replyToId?: MessageId;
 }
 export interface _CaffeineStorageCreateCertificateResult {
     method: string;
@@ -137,6 +138,7 @@ export interface backendInterface {
     getAllUsers(): Promise<Array<UserProfile>>;
     getCallerProfile(): Promise<UserProfile>;
     getCallerUserRole(): Promise<UserRole>;
+    getConversationReadStatus(convoId: ConversationId): Promise<Array<[string, bigint]>>;
     getMessages(convoId: ConversationId): Promise<Array<Message>>;
     getOrCreateConversation(participant: UserId): Promise<ConversationId>;
     getTypingParticipants(convoId: ConversationId): Promise<[string, Array<UserId>]>;
@@ -144,7 +146,7 @@ export interface backendInterface {
     isCallerAdmin(): Promise<boolean>;
     markMessagesRead(convoId: ConversationId): Promise<MessageId | null>;
     registerOrUpdateProfile(displayName: string): Promise<void>;
-    sendMessage(convoId: ConversationId, content: string, fileAttachment: FileAttachment | null): Promise<MessageId>;
+    sendMessage(convoId: ConversationId, content: string, fileAttachment: FileAttachment | null, replyToId: MessageId | null): Promise<MessageId>;
     setTyping(convoId: ConversationId, isTyping: boolean): Promise<void>;
     updateLastSeen(): Promise<void>;
 }
@@ -305,6 +307,20 @@ export class Backend implements backendInterface {
             return from_candid_UserRole_n10(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getConversationReadStatus(arg0: ConversationId): Promise<Array<[string, bigint]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getConversationReadStatus(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getConversationReadStatus(arg0);
+            return result;
+        }
+    }
     async getMessages(arg0: ConversationId): Promise<Array<Message>> {
         if (this.processError) {
             try {
@@ -409,17 +425,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async sendMessage(arg0: ConversationId, arg1: string, arg2: FileAttachment | null): Promise<MessageId> {
+    async sendMessage(arg0: ConversationId, arg1: string, arg2: FileAttachment | null, arg3: MessageId | null): Promise<MessageId> {
         if (this.processError) {
             try {
-                const result = await this.actor.sendMessage(arg0, arg1, await to_candid_opt_n20(this._uploadFile, this._downloadFile, arg2));
+                const result = await this.actor.sendMessage(arg0, arg1, await to_candid_opt_n20(this._uploadFile, this._downloadFile, arg2), to_candid_opt_n24(this._uploadFile, this._downloadFile, arg3));
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.sendMessage(arg0, arg1, await to_candid_opt_n20(this._uploadFile, this._downloadFile, arg2));
+            const result = await this.actor.sendMessage(arg0, arg1, await to_candid_opt_n20(this._uploadFile, this._downloadFile, arg2), to_candid_opt_n24(this._uploadFile, this._downloadFile, arg3));
             return result;
         }
     }
@@ -485,19 +501,22 @@ async function from_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promi
     file: [] | [_FileAttachment];
     sender: _UserId;
     timestamp: _Timestamp;
+    replyToId: [] | [_MessageId];
 }): Promise<{
     id: MessageId;
     content: string;
     file?: FileAttachment;
     sender: UserId;
     timestamp: Timestamp;
+    replyToId?: MessageId;
 }> {
     return {
         id: value.id,
         content: value.content,
         file: record_opt_to_undefined(await from_candid_opt_n15(_uploadFile, _downloadFile, value.file)),
         sender: value.sender,
-        timestamp: value.timestamp
+        timestamp: value.timestamp,
+        replyToId: record_opt_to_undefined(from_candid_opt_n19(_uploadFile, _downloadFile, value.replyToId))
     };
 }
 async function from_candid_record_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
@@ -553,6 +572,9 @@ function to_candid_opt_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Arra
 }
 async function to_candid_opt_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: FileAttachment | null): Promise<[] | [_FileAttachment]> {
     return value === null ? candid_none() : candid_some(await to_candid_FileAttachment_n21(_uploadFile, _downloadFile, value));
+}
+function to_candid_opt_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: MessageId | null): [] | [_MessageId] {
+    return value === null ? candid_none() : candid_some(value);
 }
 async function to_candid_record_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     blob: ExternalBlob;

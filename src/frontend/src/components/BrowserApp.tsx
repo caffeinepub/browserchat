@@ -9,9 +9,13 @@ import {
   Star,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackgroundMessages } from "../hooks/useBackgroundMessages";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { useNotifications } from "../hooks/useNotifications";
+import {
+  setChatActiveGlobal,
+  useNotifications,
+} from "../hooks/useNotifications";
 import { useUpdateLastSeen } from "../hooks/useQueries";
 import MessagingSidebar from "./MessagingSidebar";
 
@@ -27,12 +31,31 @@ export default function BrowserApp({ currentUserName }: BrowserAppProps) {
   const [iframeKey, setIframeKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [iframeError, setIframeError] = useState(false);
+  const [activeChatPrincipal, setActiveChatPrincipal] = useState<string | null>(
+    null,
+  );
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const { clear } = useInternetIdentity();
   const queryClient = useQueryClient();
   const { mutate: updateLastSeen } = useUpdateLastSeen();
   const { notifyNewMessage } = useNotifications();
+
+  // Keep global flag in sync so FCM onMessage handler can check it
+  useEffect(() => {
+    setChatActiveGlobal(sidebarOpen && activeChatPrincipal !== null);
+  }, [sidebarOpen, activeChatPrincipal]);
+
+  // Background poller: notifies when new messages arrive outside the active chat
+  const handleBackgroundNewMessage = useCallback(() => {
+    notifyNewMessage(false);
+  }, [notifyNewMessage]);
+
+  useBackgroundMessages(
+    handleBackgroundNewMessage,
+    sidebarOpen,
+    activeChatPrincipal,
+  );
 
   useEffect(() => {
     try {
@@ -232,6 +255,7 @@ export default function BrowserApp({ currentUserName }: BrowserAppProps) {
         onClose={() => setSidebarOpen(false)}
         currentUserName={currentUserName}
         notifyNewMessage={notifyNewMessage}
+        onActiveChatChange={setActiveChatPrincipal}
       />
     </div>
   );

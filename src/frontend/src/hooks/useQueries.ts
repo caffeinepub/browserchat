@@ -4,17 +4,19 @@ import type {
   ConversationId,
   FileAttachment,
   Message,
+  MessageId,
   UserProfile,
 } from "../backend";
 import { ExternalBlob } from "../backend";
 import { useActor } from "./useActor";
+import { useInternetIdentity } from "./useInternetIdentity";
 
 export function useGetCallerProfile() {
-  const { actor, isFetching: actorFetching } = useActor();
+  const { actor, isFetching: actorFetching, isError: actorError } = useActor();
   const query = useQuery<UserProfile | null>({
     queryKey: ["callerProfile"],
     queryFn: async () => {
-      if (!actor) throw new Error("No actor");
+      if (!actor) return null;
       try {
         return await actor.getCallerProfile();
       } catch {
@@ -24,10 +26,19 @@ export function useGetCallerProfile() {
     enabled: !!actor && !actorFetching,
     retry: false,
   });
+
+  // If actor failed or actor is done loading but is null, treat as fetched
+  const actorDoneButNull = !actorFetching && !actor && !actorError;
+  const isFetched = actorError
+    ? true
+    : actorDoneButNull
+      ? true
+      : !!actor && query.isFetched;
+
   return {
     ...query,
     isLoading: actorFetching || query.isLoading,
-    isFetched: !!actor && query.isFetched,
+    isFetched,
   };
 }
 
@@ -53,7 +64,7 @@ export function useGetMessages(convoId: ConversationId | null) {
       return actor.getMessages(convoId);
     },
     enabled: !!actor && !isFetching && !!convoId,
-    refetchInterval: 3000,
+    refetchInterval: 1500,
   });
 }
 
@@ -76,8 +87,6 @@ export function useGetConversationReadStatus(convoId: ConversationId | null) {
     queryKey: ["readStatus", convoId],
     queryFn: async () => {
       if (!actor || !convoId) return [];
-      // getConversationReadStatus exists on the backend but is missing from the
-      // generated backendInterface type in backend.ts — cast to any as workaround
       return (actor as any).getConversationReadStatus(convoId) as Promise<
         Array<[string, bigint]>
       >;
@@ -101,7 +110,7 @@ export function useGetUserProfile(principalStr: string | null) {
       }
     },
     enabled: !!actor && !isFetching && !!principalStr,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 }
 
@@ -131,16 +140,19 @@ export function useRegisterProfile() {
 
 export function useSendMessage() {
   const { actor } = useActor();
+  const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       convoId,
       content,
       file,
+      replyToId,
     }: {
       convoId: ConversationId;
       content: string;
       file?: { bytes: Uint8Array<ArrayBuffer>; name: string };
+      replyToId?: MessageId;
     }) => {
       if (!actor) throw new Error("No actor");
       let fileAttachment: FileAttachment | null = null;
@@ -148,7 +160,44 @@ export function useSendMessage() {
         const blob = ExternalBlob.fromBytes(file.bytes);
         fileAttachment = { blob, name: file.name };
       }
-      return actor.sendMessage(convoId, content, fileAttachment);
+      return (actor as any).sendMessage(
+        convoId,
+        content,
+        fileAttachment,
+        replyToId ?? null,
+      );
+    },
+    onMutate: async (vars) => {
+      const myPrincipal = identity?.getPrincipal();
+      if (!myPrincipal || vars.file) return; // skip optimistic for file uploads
+
+      await queryClient.cancelQueries({ queryKey: ["messages", vars.convoId] });
+      const previous = queryClient.getQueryData<Message[]>([
+        "messages",
+        vars.convoId,
+      ]);
+
+      const existingMessages = previous ?? [];
+      const tempId = BigInt(Date.now()) * 1_000_000n;
+      const optimisticMessage: Message = {
+        id: tempId,
+        sender: myPrincipal,
+        timestamp: BigInt(Date.now()) * 1_000_000n,
+        content: vars.content,
+        replyToId: vars.replyToId,
+      };
+
+      queryClient.setQueryData<Message[]>(
+        ["messages", vars.convoId],
+        [...existingMessages, optimisticMessage],
+      );
+
+      return { previous };
+    },
+    onError: (_err, vars, context: any) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["messages", vars.convoId], context.previous);
+      }
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["messages", vars.convoId] });
@@ -185,6 +234,16 @@ export function useUpdateLastSeen() {
     mutationFn: async () => {
       if (!actor) throw new Error("No actor");
       return actor.updateLastSeen();
+    },
+  });
+}
+
+export function useSaveFcmToken() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async (token: string) => {
+      if (!actor) throw new Error("No actor");
+      return (actor as any).saveFcmToken(token);
     },
   });
 }

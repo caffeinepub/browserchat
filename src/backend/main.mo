@@ -5,7 +5,8 @@ import Time "mo:core/Time";
 import Text "mo:core/Text";
 import Order "mo:core/Order";
 import List "mo:core/List";
-import Migration "migration";
+import Nat "mo:core/Nat";
+
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
 import MixinAuthorization "authorization/MixinAuthorization";
@@ -13,7 +14,8 @@ import AccessControl "authorization/access-control";
 import MixinStorage "blob-storage/Mixin";
 import Storage "blob-storage/Storage";
 
-(with migration = Migration.run)
+
+
 actor {
   include MixinStorage();
 
@@ -38,6 +40,7 @@ actor {
     timestamp : Timestamp;
     content : Text;
     file : ?FileAttachment;
+    replyToId : ?MessageId;
   };
 
   type Conversation = {
@@ -46,6 +49,7 @@ actor {
     messages : [Message];
     typingStates : Map.Map<UserId, Bool>;
     readUpTo : Map.Map<UserId, MessageId>;
+    nextMessageId : Nat;
   };
 
   type UserProfile = {
@@ -64,6 +68,20 @@ actor {
   let conversations = Map.empty<ConversationId, Conversation>();
   let userProfiles = Map.empty<UserId, UserProfile>();
   let typingStatus = Map.empty<ConversationId, Map.Map<UserId, Bool>>();
+
+  // FCM token storage (used by frontend for VAPID-based push)
+  let fcmTokens = Map.empty<UserId, Text>();
+
+  // Retained for upgrade compatibility — no longer actively used
+  var fcmServerKey : Text = "";
+
+  // Save FCM token for the calling user
+  public shared ({ caller }) func saveFcmToken(token : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+    fcmTokens.add(caller, token);
+  };
 
   // Helper Functions
   func getUserProfileInternal(userId : UserId) : UserProfile {
@@ -141,6 +159,7 @@ actor {
         messages = [];
         typingStates = Map.empty<UserId, Bool>();
         readUpTo = Map.empty<UserId, MessageId>();
+        nextMessageId = 0;
       };
       conversations.add(id, newConvo);
     };
@@ -152,7 +171,7 @@ actor {
   };
 
   // Messaging
-  public shared ({ caller }) func sendMessage(convoId : ConversationId, content : Text, fileAttachment : ?FileAttachment) : async MessageId {
+  public shared ({ caller }) func sendMessage(convoId : ConversationId, content : Text, fileAttachment : ?FileAttachment, replyToId : ?MessageId) : async MessageId {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can send messages");
     };
@@ -171,20 +190,24 @@ actor {
       Runtime.trap("Messages in a conversation must be at most 500");
     };
 
+    let newMsgId = convo.nextMessageId;
     let newMsg : Message = {
-      id = convo.messages.size();
+      id = newMsgId;
       sender = caller;
       timestamp = Time.now();
       content;
       file = fileAttachment;
+      replyToId;
     };
 
     let updatedMessages = convo.messages.concat([newMsg]);
     let newConvo = {
       convo with
       messages = updatedMessages;
+      nextMessageId = newMsgId + 1;
     };
     conversations.add(convoId, newConvo);
+
     newMsg.id;
   };
 

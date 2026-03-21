@@ -30,3 +30,12 @@ export function getInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2);
 }
+
+// Derive online status from lastSeen timestamp.
+// A user is considered online if they were active within the last 90 seconds.
+export function isOnlineFromLastSeen(lastSeenNs: bigint): boolean {
+  if (lastSeenNs === 0n) return false;
+  const nowMs = Date.now();
+  const lastSeenMs = Number(lastSeenNs / 1_000_000n);
+  return nowMs - lastSeenMs < 90_000;
+}

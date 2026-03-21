@@ -19,6 +19,7 @@ export interface Message {
   'file' : [] | [FileAttachment],
   'sender' : UserId,
   'timestamp' : Timestamp,
+  'replyToId' : [] | [MessageId],
 }
 export type MessageId = bigint;
 export type Timestamp = bigint;
@@ -63,6 +64,10 @@ export interface _SERVICE {
   'getAllUsers' : ActorMethod<[], Array<UserProfile>>,
   'getCallerProfile' : ActorMethod<[], UserProfile>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getConversationReadStatus' : ActorMethod<
+    [ConversationId],
+    Array<[string, bigint]>
+  >,
   'getMessages' : ActorMethod<[ConversationId], Array<Message>>,
   'getOrCreateConversation' : ActorMethod<[UserId], ConversationId>,
   'getTypingParticipants' : ActorMethod<
@@ -74,7 +79,7 @@ export interface _SERVICE {
   'markMessagesRead' : ActorMethod<[ConversationId], [] | [MessageId]>,
   'registerOrUpdateProfile' : ActorMethod<[string], undefined>,
   'sendMessage' : ActorMethod<
-    [ConversationId, string, [] | [FileAttachment]],
+    [ConversationId, string, [] | [FileAttachment], [] | [MessageId]],
     MessageId
   >,
   'setTyping' : ActorMethod<[ConversationId, boolean], undefined>,

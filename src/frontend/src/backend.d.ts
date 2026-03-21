@@ -28,6 +28,7 @@ export interface Message {
     file?: FileAttachment;
     sender: UserId;
     timestamp: Timestamp;
+    replyToId?: MessageId;
 }
 export interface UserProfile {
     displayName: string;
@@ -52,7 +53,7 @@ export interface backendInterface {
     isCallerAdmin(): Promise<boolean>;
     markMessagesRead(convoId: ConversationId): Promise<MessageId | null>;
     registerOrUpdateProfile(displayName: string): Promise<void>;
-    sendMessage(convoId: ConversationId, content: string, fileAttachment: FileAttachment | null): Promise<MessageId>;
+    sendMessage(convoId: ConversationId, content: string, fileAttachment: FileAttachment | null, replyToId: MessageId | null): Promise<MessageId>;
     setTyping(convoId: ConversationId, isTyping: boolean): Promise<void>;
     updateLastSeen(): Promise<void>;
 }
